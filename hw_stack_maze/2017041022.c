@@ -1,187 +1,236 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #define ASCII_ZERO ('0')
 #define DIR_COUNT (8)
+#define REVERSE_DIR (7)
 
-typedef enum {
+#define TIME_CHECK (0)
+#define DEBUG (0)
+
+enum {
     TRUE = 1,
     FALSE = 0
-} bool_t;
-
-typedef enum {
-    PATH = 0,
-    NONPATH = 1
-} wall_t;
-
-typedef struct {
-    int row;
-    int col;
-} pos_t;
-
-typedef enum {
-    NORTH = 0,
-    NORTH_EAST = 1,
-    EAST = 2,
-    SOUTH_EAST = 3,
-    SOUTH = 4,
-    SOUTH_WEST = 5,
-    WEST = 6,
-    NORTH_WEST = 7
-} direction_t;
-
-pos_t g_move[8] = {
-    {.row = -1, .col = 0},
-    {.row = -1, .col = 1},
-    {.row = 0, .col = 1},
-    {.row = 1, .col = 1},
-    {.row = 1, .col = 0},
-    {.row = -1, .col = -1},
-    {.row = 0, .col = -1},
-    {.row = -1, .col = -1}
 };
 
+enum {
+    PATH = 0,
+    NONPATH = 1
+};
+
+typedef enum {
+    EAST = 0,
+    SOUTH_EAST = 1,
+    SOUTH = 2,
+    SOUTH_WEST = 3,
+    WEST = 4,
+    NORTH_WEST = 5,
+    NORTH = 6,
+    NORTH_EAST = 7
+} dir_t;
+
 typedef struct {
-    int row;
-    int col;
-    direction_t dir;
+    int x;
+    int y;
+} xy_t;
+
+typedef struct {
+    xy_t xy;
+    dir_t dir;
+} xyd_t;
+
+typedef struct path {
+    xyd_t xyd;
+    struct path* link;
 } path_t;
 
-typedef struct {
-    path_t* path;
-    int capacity;
-    int top;
-} stack_t;
+// ======== stack ========
+void push(path_t** ptop, xyd_t xy);
+xyd_t pop(path_t** ptop);
 
-pos_t get_maze_size(void);
-void load_maze(int* p_maze_in, pos_t maze_size);
-void print_maze(int* p_maze_in, pos_t maze_size);
-void deep_copy_maze(int* p_maze_in, int* p_mark, pos_t maze_size);
+// =====maze setting=====
+xy_t get_maze_size_in(void);
+void load_maze(int* p_maze, int* p_mark, xy_t size_in);
+void load_solv(int* p_solv, xy_t size_out);
+void set_solution(int* p_solv, xy_t size_out, path_t** p_top);
 
-void init_stack(stack_t* s);
-int is_full(stack_t* s);
-int is_empty(stack_t* s);
-void push(stack_t* s, path_t point);
-path_t pop(stack_t* s);
-void free_stack(stack_t* s);
+// ======find path ======
+dir_t search_dir(int* p_maze, int* p_mark, xy_t size_out, xyd_t xyd_crr, dir_t dir_pre);
+int count_direction_opt(int* p_maze, int* p_mark, xy_t size_out, xyd_t xyd_crr, dir_t dir_pre);
+xy_t move_xy(xy_t xy_crr, dir_t dir_pre);
+void delete_mark_path(int* p_mark, xy_t size_out, xyd_t xyd_crr);
 
-direction_t detect_path_start(int* p_maze_in, int* p_mark, pos_t maze_size, path_t point);
-int detect_path(int* p_maze_in, int* p_mark, pos_t maze_size, path_t point, direction_t footprint);
-void delete_mark(int* p_mark, pos_t maze_size, path_t point);
-int count_optional_path_start(int* p_maze_in, int* p_mark, pos_t maze_size, path_t point);
-int count_optional_path(int* p_maze_in, int* p_mark, pos_t maze_size, path_t point, direction_t footprint);
+// ======= print maze =====
+void print_maze_by_ptr(int* p_maze, xy_t size_in);
+void print_maze_solution(int* p_solv, xy_t size_in, path_t* path_top);
+
+// global var
+xy_t g_move[DIR_COUNT] = {
+    { 1, 0 }, // EAST = 0,
+    { 1, 1 }, // SOUTH_EAST = 1,
+    { 0, 1 }, // SOUTH = 2,
+    { -1, 1 }, // SOUTH_WEST = 3,
+    { -1, 0 }, // WEST = 4,
+    { -1, -1 }, // NORTH_WEST = 5,
+    { 0, -1 }, // NORTH = 6,
+    { 1, -1 }, // NORTH_EAST = 7
+};
+
+path_t* path_top = NULL;
+path_t* cross_top = NULL;
+path_t* path_sol = NULL;
 
 int main(void)
 {
-    int* p_maze_in = NULL;
-    pos_t maze_size = { 0, 0 };
+    clock_t start, end;
+    start = clock();
+
+    int* p_maze = NULL;
     int* p_mark = NULL;
+    int* p_solv = NULL;
 
-    maze_size = get_maze_size();
+    xy_t size_in = get_maze_size_in();
+    xy_t size_out;
+    size_out.x = size_in.x + 2;
+    size_out.y = size_in.y + 2;
 
-    p_maze_in = (int*)malloc((maze_size.row + 2) * (maze_size.col + 2) * sizeof(int));
+    xyd_t xyd_des;
+    xyd_des.xy.x = size_in.x;
+    xyd_des.xy.y = size_in.y;
 
-    load_maze(p_maze_in, maze_size);
-    printf("<<INPUT MAZE>>\n");
-    print_maze(p_maze_in, maze_size);
+    p_maze = (int*)malloc(size_out.x * size_out.y * sizeof(int));
+    p_mark = (int*)malloc(size_out.x * size_out.y * sizeof(int));
+    p_solv = (int*)malloc(size_out.x * size_out.y * sizeof(int));
 
-    p_mark = (int*)malloc((maze_size.row + 2) * (maze_size.col + 2) * sizeof(int));
+    load_maze(p_maze, p_mark, size_in);
+    load_solv(p_solv, size_out);
 
-    deep_copy_maze(p_maze_in, p_mark, maze_size);
+    printf("<<<INPUT MAZE>>>\n");
+    print_maze_by_ptr(p_maze, size_in);
 
-    stack_t* s;
-    s = (stack_t*)malloc(sizeof(stack_t));
-    init_stack(s);
-
-    stack_t* cross;
-    cross = (stack_t*)malloc(sizeof(stack_t));
-    init_stack(cross);
-
-    path_t point;
-    point.row = 0;
-    point.col = 0;
-
-    path_t crossroad_point;
-    
-    if (count_optional_path_start(p_maze_in, p_mark, maze_size, point) > 1) {
-        crossroad_point.row = point.row;
-        crossroad_point.col = point.col;
-        point.dir = detect_path_start(p_maze_in, p_mark, maze_size, point);
-        crossroad_point.dir = point.dir;
-        push(cross, crossroad_point);
-        push(s, point);
+    if (TIME_CHECK) {
+        end = clock();
+        printf("time to loading maze : %f\n", (double)(end - start));
     }
 
-    printf("<<Start MAZE>>\n");
-    print_maze(p_mark, maze_size);
-
-    int i = 0;
+    dir_t dir_pre = SOUTH_EAST; // 첫 노드는 임시로 SOUTH_EAST
+    xyd_t xyd_crr;
+    xyd_crr.xy.x = 1;
+    xyd_crr.xy.y = 1;
+    xyd_crr.dir = search_dir(p_maze, p_mark, size_out, xyd_crr, dir_pre);
+    int dir_opt_count = count_direction_opt(p_maze, p_mark, size_out, xyd_crr, dir_pre);
 
     while (TRUE) {
-        point.row += g_move[point.dir].row;
-        point.col += g_move[point.dir].col;
-        direction_t footprint = (point.dir + 4) % 8;
-        point.dir = detect_path(p_maze_in, p_mark, maze_size, point, footprint);
-
-        if (point.dir < 0) {
-            while (crossroad_point.row != point.row && crossroad_point.col != point.col) {
-                delete_mark(p_mark, maze_size, point);
-                point = pop(s);
-                printf("Roll Back...\n");
-                print_maze(p_mark, maze_size); 
+        if (dir_opt_count > 1) {
+            push(&path_top, xyd_crr);
+            delete_mark_path(p_mark, size_out, xyd_crr);
+            push(&cross_top, xyd_crr);
+        } else if (dir_opt_count == 1) {
+            push(&path_top, xyd_crr);
+            delete_mark_path(p_mark, size_out, xyd_crr);
+        } else if (dir_opt_count == 0) {
+            while (cross_top->xyd.xy.x != path_top->xyd.xy.x
+            && cross_top->xyd.xy.y != path_top->xyd.xy.y) {
+                xyd_crr = pop(&path_top);
+                delete_mark_path(p_mark, size_out, xyd_crr);
             }
-            crossroad_point = pop(cross);
+            pop(&cross_top);
+            dir_pre = xyd_crr.dir;
+            xyd_crr.dir = search_dir(p_maze, p_mark, size_out, xyd_crr, dir_pre);
+            dir_opt_count = count_direction_opt(p_maze, p_mark, size_out, xyd_crr, dir_pre);
+            continue;
         }
 
-        if (count_optional_path(p_maze_in, p_mark, maze_size, point, footprint) > 1) {
-            crossroad_point = point;
-            push(cross, crossroad_point);
+        dir_pre = xyd_crr.dir;
+        xyd_crr.xy = move_xy(xyd_crr.xy, dir_pre);
+        xyd_crr.dir = search_dir(p_maze, p_mark, size_out, xyd_crr, dir_pre);
+        dir_opt_count = count_direction_opt(p_maze, p_mark, size_out, xyd_crr, dir_pre);
+
+        if (xyd_crr.xy.x == xyd_des.xy.x && xyd_crr.xy.y == xyd_des.xy.y ) {
+            push(&path_top, xyd_crr);
+            printf("<<<SOLUTION>>>\n");
+            break;
         }
+    }
 
-        if (point.row == maze_size.row && point.col == maze_size.col) {
-            printf("Success MAZE\n");
-            print_maze(p_mark, maze_size);
-            return 0;
-        }
+    set_solution(p_solv, size_out, &path_top);
 
-        push(s, point);
+    print_maze_by_ptr(p_solv, size_in);
 
-        printf("<<Next Path>>\n");
-        print_maze(p_mark, maze_size);
-
-        i++;
-        if (i > 5) {
-            return 0;
-        }
+    if (TIME_CHECK) {
+        end = clock();
+        printf("time to complete detecting path : %f\n", (double)(end - start));
     }
 
     return 0;
 }
 
-pos_t get_maze_size(void)
+
+// ======== stack ========
+void push(path_t** ptop, xyd_t xyd)
 {
-    pos_t maze_size = { 0, 0, };
+    path_t* new_path;
+    new_path = malloc(sizeof(path_t));
+
+    new_path->xyd = xyd;
+    new_path->link = *ptop;
+    *ptop = new_path;
+}
+
+xyd_t pop(path_t** ptop)
+{
+    xyd_t pre_pos;
+    path_t* top_node;
+    top_node = *ptop;
+
+    pre_pos = top_node->xyd;
+    *ptop = top_node->link;
+    top_node->link = NULL;
+    // free(top_node);
+
+    return pre_pos;
+}
+
+void reverse_stack(path_t** p_top1, path_t** p_top2)
+{
+    xyd_t xyd_tmp;
+    while (*p_top1 != NULL) {
+        xyd_tmp = pop(p_top1);
+        push(p_top2, xyd_tmp);
+    }
+}
+
+// =======================
+
+
+// =====maze setting=====
+xy_t get_maze_size_in(void)
+{
+    xy_t size = { 0, };
     int ch;
 
     FILE* file = fopen("maze.txt", "r");
     if (file == NULL) {
         perror("error while opening");
-        return;
+        return size;
     }
 
     ch = fgetc(file);
     while (ch != '\n') {
-        maze_size.col++;
+        size.x++;
         ch = fgetc(file);
     }
 
     fseek(file, 0, SEEK_END);
-    maze_size.row = ftell(file) / (maze_size.col + 1) + 1;
+    size.y = ftell(file) / (size.x + 1) + 1;
 
-    return maze_size;
+    fclose(file);
+
+    return size;
 }
 
-void load_maze(int* p_maze_in, pos_t maze_size)
+void load_maze(int* p_maze, int* p_mark, xy_t size_in)
 {
     int ch;
     int r, c;
@@ -193,158 +242,132 @@ void load_maze(int* p_maze_in, pos_t maze_size)
     }
 
     ch = fgetc(file);
-    for (r = 0; r < maze_size.row; ++r) {
-        for (c = 0; c < maze_size.col; ++c) {
-            *(p_maze_in + (r + 1) * (maze_size.col + 2) + c + 1) = ch - ASCII_ZERO;
+    for (r = 0; r < size_in.y; ++r) {
+        for (c = 0; c < size_in.x; ++c) {
+            *(p_maze + (r + 1) * (size_in.x + 2) + c + 1) = ch - ASCII_ZERO;
+            *(p_mark + (r + 1) * (size_in.x + 2) + c + 1) = ch - ASCII_ZERO;
             ch = fgetc(file);
             if (ch == '\n') {
                 ch = fgetc(file);
             }
         }
-        *(p_maze_in + (r + 1) * (maze_size.col + 2)) = NONPATH;
-        *(p_maze_in + (r + 1) * (maze_size.col + 2) + (maze_size.col + 1)) = NONPATH;
+        *(p_maze + (r + 1) * (size_in.x + 2)) = NONPATH;
+        *(p_maze + (r + 1) * (size_in.x + 2) + (size_in.x + 1)) = NONPATH;
+        *(p_mark + (r + 1) * (size_in.x + 2)) = NONPATH;
+        *(p_mark + (r + 1) * (size_in.x + 2) + (size_in.x + 1)) = NONPATH;
     }
 
-    for (c = 0; c < maze_size.row + 2; ++c) {
-        *(p_maze_in + c) = NONPATH;
-        *(p_maze_in + (maze_size.row + 1) * (maze_size.col + 2) + c) = NONPATH;
+    for (c = 0; c < size_in.y + 2; ++c) {
+        *(p_maze + c) = NONPATH;
+        *(p_maze + (size_in.y + 1) * (size_in.x + 2) + c) = NONPATH;
+        *(p_mark + c) = NONPATH;
+        *(p_mark + (size_in.y + 1) * (size_in.x + 2) + c) = NONPATH;
+    }
+
+    fclose(file);
+}
+
+void load_solv(int* p_solv, xy_t size_out)
+{
+    int r, c;
+
+    for (r = 0; r < size_out.y; ++r) {
+        for (c = 0; c < size_out.x; ++c) {
+            *(p_solv + r * size_out.x + c) = 1;
+        }
+    }
+}
+// =======================
+
+
+// ======find path ======
+dir_t search_dir(int* p_maze, int* p_mark, xy_t size_out, xyd_t xyd_crr, dir_t dir_pre)
+{
+    int* maze_curr = p_maze + xyd_crr.xy.x + xyd_crr.xy.y * size_out.x;
+    int* mark_curr = p_mark + xyd_crr.xy.x + xyd_crr.xy.y * size_out.x;
+    int* maze_next;
+    int* mark_next;
+
+    dir_t from_dir = (dir_pre + DIR_COUNT / 2) % 8;
+
+    dir_t dir;
+    for (dir = 0; dir < DIR_COUNT; ++dir) {
+        maze_next = maze_curr + g_move[dir].y * size_out.x + g_move[dir].x;
+        mark_next = mark_curr + g_move[dir].y * size_out.x + g_move[dir].x;
+        if (*maze_next == PATH && *mark_next == PATH 
+        && dir != (from_dir + 1) % DIR_COUNT && dir != (from_dir - 1 + DIR_COUNT) % DIR_COUNT
+        && dir != from_dir) {
+            return dir;
+        }
     }
 }
 
-void print_maze(int* p_maze_in, pos_t maze_size)
+int count_direction_opt(int* p_maze, int* p_mark, xy_t size_out, xyd_t xyd_crr, dir_t dir_pre)
+{
+    int* maze_curr = p_maze + xyd_crr.xy.x + xyd_crr.xy.y * size_out.x;
+    int* mark_curr = p_mark + xyd_crr.xy.x + xyd_crr.xy.y * size_out.x;
+    int* maze_next;
+    int* mark_next;
+    dir_t from_dir = (dir_pre + DIR_COUNT / 2) % 8;
+
+    dir_t dir;
+    int count = 0;
+
+    for (dir = 0; dir < DIR_COUNT; ++dir) {
+        maze_next = maze_curr + g_move[dir].y * size_out.x + g_move[dir].x;
+        mark_next = mark_curr + g_move[dir].y * size_out.x + g_move[dir].x;
+        if (*maze_next == PATH && *mark_next == PATH && dir != from_dir) {
+            ++count;
+        }
+    }
+
+    return count;
+}
+
+xy_t move_xy(xy_t xy_crr, dir_t dir_pre)
+{
+    xy_t xy_next;
+    xy_next.x = xy_crr.x + g_move[dir_pre].x;
+    xy_next.y = xy_crr.y + g_move[dir_pre].y;
+
+    return xy_next;
+}
+
+void delete_mark_path(int* p_mark, xy_t size_out, xyd_t xyd_crr)
+{
+    int* mark_curr = p_mark + xyd_crr.xy.y * size_out.x + xyd_crr.xy.x;
+    *mark_curr = '~' - ASCII_ZERO;
+
+    return;
+}
+
+// =======================
+
+
+// ======= print maze =====
+void print_maze_by_ptr(int* p_maze, xy_t size_in)
 {
     int ch;
     int r, c;
 
-    for (r = 0; r < maze_size.row; ++r) {
-        for (c = 0; c < maze_size.col; ++c) {
-            ch = *(p_maze_in + (r + 1) * (maze_size.col + 2) + c + 1);
-            printf("%d", ch);
+    for (r = 1; r <= size_in.y; ++r) {
+        for (c = 1; c <= size_in.x; ++c) {
+            ch = *(p_maze + r * (size_in.x + 2) + c);
+            printf("%c", ch + ASCII_ZERO);
         }
         printf("\n");
     }
     printf("\n");
 }
 
-void deep_copy_maze(int* p_maze_in, int* p_mark, pos_t maze_size)
+
+void set_solution(int* p_solv, xy_t size_out, path_t** p_top)
 {
-    int* p_maze_tmp = p_maze_in;
-    int* p_mark_tmp = p_mark;
-    int count = (maze_size.row + 2) * (maze_size.col + 2);
-    int i;
-    for (i = 0; i < count; ++i) {
-        *p_mark_tmp++ = *p_maze_tmp++;
+    path_t* tmp_top;
+    tmp_top = *p_top;
+
+    while (tmp_top != NULL) {
+        *(p_solv + (tmp_top->xyd.xy.y * size_out.x) + tmp_top->xyd.xy.x) = PATH;
+        tmp_top = tmp_top->link;
     }
-}
-
-void init_stack(stack_t* s)
-{
-    s->top = -1;
-    s->capacity = 1;
-    s->path = (path_t*)malloc(sizeof(path_t)*(s->capacity));
-}
-
-int is_full(stack_t* s) {
-    return (s->top >= (s->capacity - 1));
-}
-
-int is_empty(stack_t* s) {
-    return (s->top <= -1);
-}
-
-void push(stack_t* s, path_t point) {
-    if (is_full(s)) {
-        s->capacity *= 2;
-        s->path = (path_t*)realloc(s->path, s->capacity * sizeof(path_t));
-    }
-    s->path[++(s->top)] = point;
-}
-
-path_t pop(stack_t* s) {
-    if (is_empty(s)) {
-        fprintf(stderr, "Stack is already empty\n");
-        exit(1);
-    }
-    return s->path[(s->top)--];
-}
-
-void free_stack(stack_t* s) {
-    free(s);
-}
-
-direction_t detect_path_start(int* p_maze_in, int* p_mark, pos_t maze_size, path_t point)
-{
-    int* p_maze_crr = p_maze_in + (point.row + 1) * (maze_size.col + 2) + point.col;
-    int* p_mark_crr = p_mark + (point.row + 1) * (maze_size.col + 2) + point.col;
-
-    direction_t dir;
-
-    for (dir = NORTH; dir <= NORTH_WEST; ++dir) {
-        if (*(p_maze_crr + g_move[dir].row * (maze_size.col + 2) + g_move[dir].col) == PATH
-        && *(p_mark_crr + g_move[dir].row * (maze_size.col + 2) + g_move[dir].col) == PATH) {
-            return dir;
-        }
-    }
-}
-
-int detect_path(int* p_maze_in, int* p_mark, pos_t maze_size, path_t point, direction_t footprint)
-{
-    int* p_maze_crr = p_maze_in + (point.row + 1) * (maze_size.col + 2) + point.col;
-    int* p_mark_crr = p_mark + (point.row + 1) * (maze_size.col + 2) + point.col;
-
-    direction_t dir;
-
-    for (dir = NORTH; dir <= NORTH_WEST; ++dir) {
-        if (*(p_maze_crr + g_move[dir].row * (maze_size.col + 2) + g_move[dir].col) == PATH
-        && *(p_mark_crr + g_move[dir].row * (maze_size.col + 2) + g_move[dir].col) == PATH
-        && dir != footprint) {
-            return dir;
-        }
-    }
-
-    return -1;
-}
-
-void delete_mark(int* p_mark, pos_t maze_size, path_t point)
-{
-    int* p_mark_crr = p_mark + (point.row + 1) * (maze_size.col + 2) + point.col;
-    // int* p_mark_dir_point = p_mark_crr + g_move[point.dir].row * (maze_size.col + 2) + g_move[point.dir].col;
-
-    *p_mark_crr = NONPATH;
-    // *p_mark_dir_point = NONPATH;
-}
-
-int count_optional_path_start(int* p_maze_in, int* p_mark, pos_t maze_size, path_t point)
-{
-    int* p_maze_crr = p_maze_in + (point.row + 1) * (maze_size.col + 2) + point.col;
-    int* p_mark_crr = p_mark + (point.row + 1) * (maze_size.col + 2) + point.col;
-    int count = 0;
-    direction_t dir;
-
-    for (dir = NORTH; dir <= NORTH_WEST; ++dir) {
-        if (*(p_maze_crr + g_move[dir].row * (maze_size.col + 2) + g_move[dir].col) == PATH
-        && *(p_mark_crr + g_move[dir].row * (maze_size.col + 2) + g_move[dir].col) == PATH) {
-            ++count;
-        }
-    }
-
-    return count;
-}
-
-int count_optional_path(int* p_maze_in, int* p_mark, pos_t maze_size, path_t point, direction_t footprint)
-{
-    int* p_maze_crr = p_maze_in + (point.row + 1) * (maze_size.col + 2) + point.col;
-    int* p_mark_crr = p_mark + (point.row + 1) * (maze_size.col + 2) + point.col;
-    int count = 0;
-    direction_t dir;
-
-    for (dir = NORTH; dir <= NORTH_WEST; ++dir) {
-        if (*(p_maze_crr + g_move[dir].row * (maze_size.col + 2) + g_move[dir].col) == PATH
-        && *(p_mark_crr + g_move[dir].row * (maze_size.col + 2) + g_move[dir].col) == PATH
-        && dir != footprint) {
-            ++count;
-        }
-    }
-
-    return count;
 }
